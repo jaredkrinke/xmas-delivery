@@ -92,14 +92,38 @@ player_states = {
 }
 
 player = {
-    x = 30,
-    y = 64,
-    speed = 1,
+    gift_period = 10,
+    speed = 2,
+
+    x = 16,
+    y = 56,
     state = player_states.idle,
     timer = 0,
     period = 2 * 30,
     drift = 3,
+
+    counter = 0,
 }
+
+function player:update()
+    self.timer = (self.timer + 1) % self.period
+    if self.counter > 0 then self.counter = self.counter - 1 end
+
+    if self.state == player_states.idle then
+        if btn(buttons.z) then
+            self.state = player_states.throwing
+            self.counter = self.gift_period
+            projectiles:add(self.x, self.y)
+        end
+    elseif self.state == player_states.throwing then
+        if not btn(buttons.z) then
+            self.state = player_states.idle
+        end
+    end
+
+    if self.x > 16 and btn(buttons.left) then self.x = self.x - self.speed end
+    if self.x < 96 and btn(buttons.right) then self.x = self.x + self.speed end
+end
 
 local gen_state_names = {
     initial = 0,
@@ -108,14 +132,26 @@ local gen_state_names = {
 }
 
 map = {
-    data = {},
-    width = screen.width / 8 + 1,
+    speed = 1,
     max_house_height = 3,
+    width = system.width / 8 + 1,
+    min_house_width = 1,
+    max_house_width = 4,
+    max_distance = 5,
+    min_initial_distance = 20,
+
     height = 2 + 3 + 1,
+    shift = 0,
+
     base = 1,
-    shift = 0, -- todo: needed?
     state = gen_state_names.initial,
+    initial = true,
+
+    data = {},
     house_height = 0,
+    house_position = 0,
+    house_width = 0,
+    house_distance = 0,
 }
 
 function map:generate()
@@ -126,93 +162,198 @@ function map:generate()
 
     local column = self.data[base];
     for i=1,self.height do
-        data[i] = 0
+        column[i] = 0
     end
 
     -- ground
     for i=1, 2 do
         local x = rnd()
-        if x < 0.5 then
-            column[i] = sprites.ground
-        elseif x < 0.7 then
-            column[i] = sprites.ground_1
-        elseif x < 0.8 then
-            column[i] = sprites.ground_2
+        local sprite = sprites.ground
+        if x < 0.75 then
+        elseif x < 0.85 then
+            sprite = sprites.ground_2
+        elseif x < 0.95 then
+            sprite = sprites.ground_3
         else
-            column[i] = sprites.ground_3
+            sprite = sprites.ground_4
         end
+
+        column[i] = sprite
     end
 
     -- state machine
     if self.state == gen_state_names.initial then
-    elseif self.state == gen_state_names.house_before then
-    elseif self.state = gen_state_names.house_after then
-    else
-        -- error!
+        self.house_distance = self.house_distance + 1
+        if not self.initial or self.house_distance >= self.min_initial_distance then
+            self.initial = false
+
+            -- add new house?
+            local x = rnd()
+            if self.house_distance >= self.max_distance or x < 0.1 then
+                self.state = gen_state_names.house_before
+                local y = rnd()
+                local h = 1
+                if y < 0.5 then
+                    h = 1
+                elseif y < 0.95 then
+                    h = 2
+                else
+                    h = 3
+                end
+    
+                self.house_height = h
+                self.house_position = flr(rnd(h)) + 1
+                self.house_width = 0
+            end
+        end
+    elseif self.state == gen_state_names.house_before or self.state == gen_state_names.house_after then
+        local chimney = false
+        local skip = false
+        local x = rnd()
+        if self.state == gen_state_names.house_before then
+            -- increase height? add chimney?
+            if self.house_position < self.house_height then
+                if x < 0.25 then
+                    self.house_position = self.house_position + 1
+                end
+            else
+                if self.house_width >= self.min_house_width and x < 0.75 then
+                    chimney = true
+                end
+            end
+
+            if self.house_width >= self.max_house_width then
+                chimney = true
+            end
+
+            if chimney then
+                self.state = gen_state_names.house_after
+            end
+        else
+            -- decrease height? end?
+            if self.house_width >= self.max_house_width or x < 0.4 then
+                self.state = gen_state_names.initial
+                self.house_distance = 0
+                skip = true
+            elseif self.house_position > 1 and x < 0.75 then
+                self.house_position = self.house_position - 1
+            end
+        end
+
+        -- draw house
+        if not skip then
+            self.house_width = self.house_width + 1
+            for i=1, self.house_position do
+                local sprite = sprites.house
+                if i == 1 and chimney then
+                    sprite = sprites.house_door
+                end
+                column[2 + i] = sprite
+            end
+    
+            local sprite = sprites.roof
+            if chimney then sprite = sprites.roof_chimney end
+            column[2 + self.house_position + 1] = sprite
+        end
     end
 
     self.base = (base % self.width) + 1
 end
 
-houses = {
-    list = {},
-    color_base = colors.peach,
-    colors = {
-        colors.dark_blue,
-        colors.dark_green,
-        colors.green,
-        colors.red,
-        colors.orange,
-        colors.yellow,
-        colors.green,
-        colors.indigo,
-    },
-    sprite_map = {
-        sprites.house,
-        sprites.house_door,
-        sprites.house_tree,
-    }
-}
+function map:get(x, y)
+    if x > 1 and y > 1 and x < 128 and y < 128 then
+        local sx = flr((x + self.shift) / 8)
+        local dx = (self.base + sx - 1) % #self.data + 1
+        local column = self.data[dx]
+        local sy = flr((127 - y) / 8) + 1
+        if sy <= #column then
+            return column[sy]
+        end
+    end
 
-function houses:add()
-    local house = {}
-    house.color = houses.colors[flr(rnd(#houses.colors)) + 1]
-
-    -- outline
-    house.target = 2
-    house.mask = {
-        { 3, 2, 1 },
-        { 0, 1, 1 },
-    }
-    -- todo
-    -- local height = flr(rnd(3)) + 1
-    -- local width = flr(rnd(5)) + 1
-    -- local left = 1
-    -- for local i=1, height do
-    --     local row = {}
-    --     for local j=1, width do
-    --         row[left + j] = true
-    --     end
-    --     mask[i] = row
-
-    --     left = flr(rnd(width - left + 1))
-    --     if left <= 0 then break end
-    -- end
-
-    self.list[#self.list + 1] = house
+    return nil
 end
 
+function map:update()
+    self.shift = self.shift + self.speed
+    while self.shift >= 8 do
+        self:generate()
+        self.shift = self.shift - 8
+    end
+end
+
+projectiles = {
+    g = 0.5,
+    offset_x = -1,
+    offset_y = -2,
+
+    pool = { },
+}
+
+function projectiles:add(x, y)
+    local pool = self.pool
+    local p = nil
+    for i=1, #pool do
+        if not pool[i].active then
+            p = pool[i]
+            break
+        end
+    end
+
+    if p == nil then
+        p = {}
+        pool[#pool + 1] = p
+    end
+
+    p.active = true
+    p.x, p.y = x, y
+    p.vx = 2
+    p.vy = 2
+end
+
+function projectiles:update()
+    local pool = self.pool
+    for i=1, #pool do
+        local p = pool[i]
+        if p.active and p.debug == nil then
+            p.vy = p.vy + projectiles.g
+            p.x = p.x + p.vx
+            p.y = p.y + p.vy
+
+            -- check for collisions
+            -- offset to middle and for sprite
+            local map_sprite = map:get(p.x, p.y)
+            if map_sprite ~= nil and map_sprite ~= 0 and not fget(map_sprite, 0) then
+                -- p.active = false
+                p.debug = colors.red
+                if fget(map_sprite, 1) then
+                    p.debug = colors.green
+                    game.score = game.score + 1
+                else
+                    game.score = game.score - 1
+                    -- todo: splat
+                end
+            end
+        elseif p.debug ~= nil then
+            p.x = p.x - map.speed
+        end
+    end
+end
+
+game = {
+    score = 0,
+}
+
 function _init()
-    houses:add()
+    for i=1, map.width do
+        map:generate()
+    end
 end
 
 function _update()
-    player.timer = (player.timer + 1) % player.period
-    if btn(buttons.up) then player.y = player.y - player.speed end
-    if btn(buttons.down) then player.y = player.y + player.speed end
-    if btn(buttons.left) then player.x = player.x - player.speed end
-    if btn(buttons.right) then player.x = player.x + player.speed end
-    if btn(buttons.z) then player.state = player_states.throwing else player.state = player_states.idle end
+    map:update()
+    projectiles:update()
+    player:update()
 end
 
 -- rendering
@@ -221,7 +362,6 @@ function draw_sprite_block(block, x, y)
         local row = block[i]
         for j = 1, #row do
             spr(row[j], x + 8 * (j - 1), y + 8 * (i - 1))
-            -- rectfill(x + 8 * (j - 1), y + 8 * (i - 1), x + 8 * (j), y + 8 * (i), row[j] % 16)
         end
     end
 end
@@ -243,48 +383,41 @@ function player:draw()
     line(x - 8, last_y + 8, x + 8, y + 8, colors.light_gray)
 end
 
-function houses:draw()
-    local x0 = 64
-    local y0 = 112
-    for k=1, #self.list do
-        local house = self.list[k]
-        pal(houses.color_base, house.color)
-
-        -- structure
-        local mask = house.mask
-        local roof_heights = {}
-        local width = #mask[1]
-        for i=1, #mask do
-            local row = mask[i]
-            for j=1, #row do
-                if row[j] > 0 then
-                    spr(houses.sprite_map[row[j]], x0 + 8 * (j - 1), y0 - 8 * (i - 1))
-                end
-
-                if roof_heights[j] == nil and row[j] == 0 then
-                    roof_heights[j] = i - 1
-                end
-            end
+function map:draw()
+    for i=1, #self.data do
+        local x = 8 * (i - 1) - self.shift
+        local column = self.data[(self.base + i - 2) % #self.data + 1]
+        for j=1, #column do
+            local y = 128 - 8 * j
+            local sprite = column[j]
+            if sprite > 0 then spr(sprite, x, y) end
+            -- rectfill(x, y, x + 8, y + 8, sprite + 1)
         end
-
-        -- roof
-        for j=1, width do
-            local height = roof_heights[j]
-            if height == nil then height = #mask end
-
-            local sprite = sprites.roof
-            if j == house.target then sprite = sprites.roof_chimney end
-            spr(sprite, x0 + 8 * (j - 1), y0 - 8 * height)
-        end
-
-        pal()
     end
+end
+
+function projectiles:draw()
+    local pool = self.pool
+    for i=1, #pool do
+        local p = pool[i]
+        if p.active then
+            rectfill(p.x, p.y, p.x, p.y, p.debug or colors.yellow)
+            -- spr(sprites.gift, p.x + projectiles.offset_x, p.y + projectiles.offset_y)
+        end
+    end
+end
+
+function game:draw()
+    color(colors.white)
+    print("score: " .. self.score)
 end
 
 function _draw()
     cls()
+    game:draw()
+    map:draw()
     player:draw()
-    houses:draw()
+    projectiles:draw()
 end
 
 __gfx__
@@ -319,3 +452,6 @@ f7f00000070000000000f00000000000000000000000000000000000000000000000000000000000
 0000000000000000f700f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 000000000000000000000000f0000f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000007000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+__gff__
+0000000001020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
