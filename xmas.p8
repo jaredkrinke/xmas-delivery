@@ -185,17 +185,17 @@ player = {
     speed = 2,
 
     x = 16,
+    y_base = 56,
     y = 56,
     state = player_states.idle,
     timer = 0,
-    period = 2 * 30,
-    drift = 3,
+    drift_period = 2 * 30,
 
     counter = 0,
 }
 
 function player:update()
-    self.timer = (self.timer + 1) % self.period
+    self.timer = (self.timer + 1) % self.drift_period
     if self.counter > 0 then self.counter = self.counter - 1 end
 
     if self.state == player_states.idle then
@@ -226,7 +226,7 @@ map = {
     width = system.width / 8 + 1,
     min_house_width = 1,
     max_house_width = 4,
-    max_distance = 5,
+    max_distance = 4,
     min_initial_distance = 20,
 
     height = 2 + 3 + 1,
@@ -283,7 +283,7 @@ function map:generate()
 
             -- add new house?
             local x = rnd()
-            if self.house_distance >= self.max_distance or x < 0.1 then
+            if self.house_distance >= self.max_distance or x < 0.15 then
                 self.state = gen_state_names.house_before
                 local y = rnd()
                 local h = 1
@@ -506,18 +506,19 @@ end
 function player:draw()
     local player_block = sprite_blocks.santa_idle
     if player.state == player_states.throwing then player_block = sprite_blocks.santa_throwing end
+
+    local drift = 3 * map.speed
+    player.y = player.y_base + sin(player.timer / player.drift_period) * drift
     draw_sprite_block(player_block, player.x - 8, player.y - 8)
 
-    local drift = sin(player.timer / player.period) * player.drift
-    local x, y = player.x + 8, player.y - 8 + drift
-    draw_sprite_block(sprite_blocks.reindeer, x, y)
-    line(x, player.y, x + 8, y + 8, colors.light_gray)
-
-    local last_x, last_y = x, y
-    drift = sin(((player.timer + 5) % player.period) / player.period) * player.drift
-    x, y = last_x + 16, player.y - 8 + drift
-    draw_sprite_block(sprite_blocks.rudolph, x, y)
-    line(x - 8, last_y + 8, x + 8, y + 8, colors.light_gray)
+    local x, y = player.x, player.y
+    for i=1,4 do
+        local last_x, last_y = x, y
+        x = x + 16
+        y = player.y_base + sin(((player.timer + 5 * i) % player.drift_period) / player.drift_period) * drift
+        draw_sprite_block(i == 4 and sprite_blocks.rudolph or sprite_blocks.reindeer, x - 8, y - 8)
+        line(last_x + 4, last_y, x, y, colors.light_gray)
+    end
 end
 
 function map:draw()
