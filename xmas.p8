@@ -488,6 +488,32 @@ game_states = {
     won = 6,
 }
 
+names = {
+    a = {
+        "belle",
+        "grape",
+        "kirk",
+        "gig",
+        "park",
+        "sea",
+        "notting",
+        "colling",
+        "ritz",
+    },
+    b = {
+        "view",
+        "wood",
+        "land",
+        "ham",
+        "ville",
+        "town",
+    },
+}
+
+function generate_name()
+    return names.a[flr(rnd(#names.a)) + 1] .. names.b[flr(rnd(#names.b)) + 1]
+end
+
 levels = {
     {
         text = {
@@ -508,33 +534,33 @@ levels = {
         minimum = 1,
     },
     {
-        name = "grapeview",
+        name = generate_name(),
         houses = 3,
         gifts = 4,
     },
     {
-        name = "allyn",
+        name = generate_name(),
         text = { "(let's pick up the pace)" },
         houses = 5,
         gifts = 6,
         speed = 1.25
     },
     {
-        name = "vaugn",
+        name = generate_name(),
         text = { "(let's speed things up)" },
         houses = 8,
         gifts = 9,
         speed = 1.5,
     },
     {
-        name = "belfair",
+        name = generate_name(),
         text = { "(hurry up!)" },
         houses = 10,
         gifts = 11,
         speed = 1.75,
     },
     {
-        name = "port orchard",
+        name = generate_name(),
         text = { "(full speed ahead!)" },
         houses = 15,
         gifts = 16,
