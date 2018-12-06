@@ -61,6 +61,14 @@ sprites = {
     gift_smash3 = 51,
 
     arrow = 34,
+
+    check = 52,
+    check_mask = 53,
+    plus_one = 54,
+
+    ex = 55,
+    ex_mask = 56,
+    minus_one = 57,
 }
 
 sprite_blocks = {
@@ -79,6 +87,39 @@ sprite_blocks = {
     rudolph = {
         { sprites.reindeer_ul, sprites.reindeer_ur_rudolph },
         { sprites.reindeer_ll, sprites.reindeer_lr },
+    },
+}
+
+sequences = {
+    gift_smash = {
+        period = 3,
+        frames = {
+            sprites.gift_smash1,
+            sprites.gift_smash2,
+            sprites.gift_smash3,
+        }
+    },
+    check = {
+        period = 3,
+        frames = {
+            sprites.check,
+            sprites.check_mask,
+            sprites.check,
+            sprites.check_mask,
+            sprites.check,
+            sprites.check,
+        }
+    },
+    ex = {
+        period = 3,
+        frames = {
+            sprites.ex,
+            sprites.ex_mask,
+            sprites.ex,
+            sprites.ex_mask,
+            sprites.ex,
+            sprites.ex,
+        }
     },
 }
 
@@ -203,6 +244,8 @@ map = {
 
     targets = pool.create(),
     target_radius = 5,
+
+    animations = pool.create(),
 }
 
 function map:generate()
@@ -311,6 +354,7 @@ function map:generate()
                 local target = self.targets:add()
                 local x, y = map:get_xy(#self.data + 1, j)
                 target.x, target.y = x + 4, y + 4
+                target.timer = 0
                 target.hit = false
             end
             column[j] = sprite
@@ -338,6 +382,14 @@ function map:get_xy(i, j)
     return 8 * (i - 1) - self.shift, 128 - 8 * j
 end
 
+function map:add_animation(sequence, x, y)
+    local animation = self.animations:add()
+    animation.sequence = sequence
+    animation.x, animation.y = x, y
+    animation.timer = animation.sequence.period
+    animation.index = 1
+end
+
 function map:update()
     self.shift = self.shift + self.speed
     while self.shift >= 8 do
@@ -345,14 +397,30 @@ function map:update()
         self.shift = self.shift - 8
     end
 
+    local animations = self.animations
+    animations:for_each(function (animation)
+        animation.timer = animation.timer - 1
+        animation.x = animation.x - self.speed
+        if animation.timer <= 0 then
+            animation.timer = animation.sequence.period
+            animation.index = animation.index + 1
+        end
+
+        if animation.index > #animation.sequence.frames then
+            animations:remove(animation)
+        end
+    end)
+
     local targets = self.targets
     targets:for_each(function (target)
+        target.timer = target.timer + 1
         target.x = target.x - self.speed
         if target.x <= 16 then
             -- todo: -1
             game.score = game.score - 1
             target.hit = true
             targets:remove(target)
+            map:add_animation(sequences.ex, target.x - 4, target.y - 4)
         end
     end)
 end
@@ -387,6 +455,7 @@ function projectiles:update()
             if x >= target.x - radius and x <= target.x + radius and y >= target.y - radius and y <= target.y + radius then
                 target.hit = true
                 targets:remove(target)
+                map:add_animation(sequences.check, target.x - 2, target.y - 4)
                 return true
             end
         end)
@@ -401,7 +470,8 @@ function projectiles:update()
             if map_sprite ~= nil and map_sprite ~= 0 and not fget(map_sprite, 0) then
                 pool:remove(p)
                 game.score = game.score - 1
-                -- todo: splat and -1
+                -- todo:-1
+                map:add_animation(sequences.gift_smash, x - projectiles.offset_x, y - projectiles.offset_y)
             end
         end
     end)
@@ -462,8 +532,12 @@ function map:draw()
 
     self.targets:for_each(function (target)
         if not target.hit then
-            spr(sprites.arrow, target.x - 3, target.y - 10)
+            spr(sprites.arrow, target.x - 3, target.y - 10 - 2 * sin((target.timer % 45) / 45))
         end
+    end)
+
+    self.animations:for_each(function (animation)
+        spr(animation.sequence.frames[animation.index], animation.x, animation.y)
     end)
 end
 
@@ -511,13 +585,14 @@ fff02766000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0000000000000000
 997990500000450000bbb30000000000bbbbbbbbbbbbbbbbbb33333bbbb33bbb0000000000000000000000000000000000000000000000000000000000000000
 0404050000004440000b300000000000bbbbbbbb3333bbbbbbbbbbbbbb5555bb0000000000000000000000000000000000000000000000000000000000000000
 55555000000444480000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0000000000000000000000000000000000000000000000000000000000000000
-07000000f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-f7f00000070f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-f7f00000070000000000f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000f70f000007000000000000f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000f700f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000000000000000000000000f0000f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000007000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+07000000f00000000000000000000000000000000000000000000000820000887700007700000000000000000000000000000000000000000000000000000000
+f7f00000070f0000000000000000000000000bb30000077700000b00882008827770077700000800000000000000000000000000000000000000000000000000
+f7f00000070000000000f000000000000000bb30000077700000bb00088288200777777000008800000000000000000000000000000000000000000000000000
+00000000f70f000007000000000000f0b30bb3007707770000b00b00008882000077770000000800000000000000000000000000000000000000000000000000
+0000000000000000f700f00000000000bb3b3000777770000bb30b00008882000077770008820800000000000000000000000000000000000000000000000000
+000000000000000000000000f0000f000bb300000777000000300b00088228200777777000000800000000000000000000000000000000000000000000000000
+0000000000000000000000000700000000300000007000000000bb30882008827770077700008820000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000820000887700007700000000000000000000000000000000000000000000000000000000
 __gff__
 0000000001020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
