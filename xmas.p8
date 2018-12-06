@@ -174,6 +174,10 @@ function pool:for_each(f)
     end
 end
 
+function pool:is_empty()
+    return not self:for_each(function (item) return true end)
+end
+
 -- game logic
 player_states = {
     idle = 1,
@@ -198,20 +202,25 @@ function player:update()
     self.timer = (self.timer + 1) % self.drift_period
     if self.counter > 0 then self.counter = self.counter - 1 end
 
-    if self.state == player_states.idle then
-        if btn(buttons.z) then
-            self.state = player_states.throwing
-            self.counter = self.gift_period
-            projectiles:add(self.x, self.y)
+    if game.state == game_states.in_game then
+        if self.state == player_states.idle then
+            if self.counter == 0 and game.gifts > 0 and btn(buttons.z) then
+                self.state = player_states.throwing
+                self.counter = self.gift_period
+                game.gifts = game.gifts - 1
+                projectiles:add(self.x, self.y)
+            end
+        elseif self.state == player_states.throwing then
+            if not btn(buttons.z) then
+                self.state = player_states.idle
+            end
         end
-    elseif self.state == player_states.throwing then
-        if not btn(buttons.z) then
-            self.state = player_states.idle
-        end
+    
+        if self.x > 16 and btn(buttons.left) then self.x = self.x - self.speed end
+        if self.x < 96 and btn(buttons.right) then self.x = self.x + self.speed end
+    else
+        self.state = player_states.idle
     end
-
-    if self.x > 16 and btn(buttons.left) then self.x = self.x - self.speed end
-    if self.x < 96 and btn(buttons.right) then self.x = self.x + self.speed end
 end
 
 local gen_state_names = {
@@ -234,7 +243,6 @@ map = {
 
     base = 1,
     state = gen_state_names.initial,
-    initial = true,
 
     data = {},
     house_height = 0,
@@ -276,29 +284,27 @@ function map:generate()
     end
 
     -- state machine
-    if self.state == gen_state_names.initial then
-        self.house_distance = self.house_distance + 1
-        if not self.initial or self.house_distance >= self.min_initial_distance then
-            self.initial = false
+    if game.state ~= game_states.in_game then self.state = gen_state_names.initial end
 
-            -- add new house?
-            local x = rnd()
-            if self.house_distance >= self.max_distance or x < 0.15 then
-                self.state = gen_state_names.house_before
-                local y = rnd()
-                local h = 1
-                if y < 0.5 then
-                    h = 1
-                elseif y < 0.95 then
-                    h = 2
-                else
-                    h = 3
-                end
-    
-                self.house_height = h
-                self.house_position = flr(rnd(h)) + 1
-                self.house_width = 0
+    if game.state == game_states.in_game and self.state == gen_state_names.initial then
+        self.house_distance = self.house_distance + 1
+        -- add new house?
+        if game.houses > 0 and (self.house_distance >= self.max_distance or rnd() < 0.15) then
+            self.state = gen_state_names.house_before
+            game.houses = game.houses - 1
+            local y = rnd()
+            local h = 1
+            if y < 0.5 then
+                h = 1
+            elseif y < 0.95 then
+                h = 2
+            else
+                h = 3
             end
+
+            self.house_height = h
+            self.house_position = flr(rnd(h)) + 1
+            self.house_width = 0
         end
     elseif self.state == gen_state_names.house_before or self.state == gen_state_names.house_after then
         local chimney = false
@@ -416,8 +422,6 @@ function map:update()
         target.timer = target.timer + 1
         target.x = target.x - self.speed
         if target.x <= 16 then
-            -- todo: -1
-            game.score = game.score - 1
             target.hit = true
             targets:remove(target)
             map:add_animation(sequences.ex, target.x - 4, target.y - 4)
@@ -469,17 +473,132 @@ function projectiles:update()
             local map_sprite = map:get(p.x, p.y)
             if map_sprite ~= nil and map_sprite ~= 0 and not fget(map_sprite, 0) then
                 pool:remove(p)
-                game.score = game.score - 1
-                -- todo:-1
                 map:add_animation(sequences.gift_smash, x - projectiles.offset_x, y - projectiles.offset_y)
             end
         end
     end)
 end
 
-game = {
-    score = 0,
+game_states = {
+    title = 1,
+    info = 2,
+    in_game = 3,
+    result = 4,
+    lost = 5,
+    won = 6,
 }
+
+levels = {
+    {
+        text = {
+            "hey, santa! it's time to spread",
+            "some christmas cheer!",
+        },
+    },
+    {
+        text = {
+            "use 'z' to toss out a gift",
+            "",
+            "try to get a gift in every",
+            "chimney, but don't miss or you",
+            "might run out of gifts",
+        },
+        houses = 1,
+        gifts = 2,
+        minimum = 1,
+    },
+    {
+        name = "grapeview",
+        houses = 3,
+        gifts = 4,
+    },
+    {
+        name = "allyn",
+        text = { "(let's pick up the pace)" },
+        houses = 5,
+        gifts = 6,
+        speed = 1.25
+    },
+    {
+        name = "vaugn",
+        text = { "(let's speed things up)" },
+        houses = 8,
+        gifts = 9,
+        speed = 1.5,
+    },
+    {
+        name = "belfair",
+        text = { "(hurry up!)" },
+        houses = 10,
+        gifts = 11,
+        speed = 1.75,
+    },
+    {
+        name = "port orchard",
+        text = { "(full speed ahead!)" },
+        houses = 15,
+        gifts = 16,
+        speed = 2,
+    },
+}
+
+game = {
+    state = game_states.info,
+    level = 1,
+
+    score = 0,
+    gifts = 0,
+    houses = 0,
+    last_z = false
+}
+
+function game:update()
+    local advance = false
+    local reset = false
+    local z = btn(buttons.z)
+    if self.state == game_states.info then
+        if not z and self.last_z then
+            if levels[self.level].houses then
+                self.state = game_states.in_game
+            else
+                advance = true
+            end
+        end
+    elseif self.state == game_states.in_game then
+        if game.houses <= 0 and map.state == gen_state_names.initial and map.targets:is_empty() then
+            local minimum = levels[self.level].minimum
+            if not minimum or game.score >= minimum then
+                advance = true
+            else
+                self.text = {"try again"}
+                self.state = game_states.info
+                reset = true
+            end
+        end
+    end
+
+    if advance then
+        if self.level == #levels then
+            self.state = game_states.won
+        else
+            reset = true
+            self.level = self.level + 1
+            self.text = nil
+            self.state = game_states.info
+        end
+    end
+
+    if reset then
+        local level = levels[self.level]
+        self.score = 0
+        self.gifts = level.gifts
+        self.houses = level.houses
+
+        if level.speed ~= nil then map.speed = level.speed end
+    end
+
+    self.last_z = z
+end
 
 function _init()
     for i=1, map.width do
@@ -488,6 +607,7 @@ function _init()
 end
 
 function _update()
+    game:update()
     map:update()
     projectiles:update()
     player:update()
@@ -548,9 +668,43 @@ function projectiles:draw()
     end)
 end
 
+function print_center(text, y)
+    print(text, system.width / 2 - (4 * #text) / 2, y)
+end
+
+-- todo: don't concatenate strings every frame!
 function game:draw()
     color(colors.white)
-    print("score: " .. self.score)
+
+    if self.level > 1 then
+        print("score: " .. self.score .. " / " .. levels[self.level].houses, 0, 0)
+        print("gifts: " .. self.gifts, 0, 6)
+    end
+
+    if self.state == game_states.info then
+        local y = 16
+        local level = levels[self.level]
+
+        if level.name then
+            print_center("now entering:", y)
+            y = y + 6
+            print_center(level.name .. " (population: " .. level.houses .. ")", y)
+            y = y + 12
+        end
+
+        text = self.text or level.text
+        if text then
+            for i=1, #text do
+                print_center(text[i], y)
+                y = y + 6
+            end
+        end
+
+        print("press 'z' to continue >", 36, 88)
+    elseif self.state == game_states.in_game then
+    elseif self.state == game_states.won then
+        print("you win! merry christmas!", system.width / 2 - 50, 36)
+    end
 end
 
 function _draw()
