@@ -59,6 +59,8 @@ sprites = {
     gift_smash1 = 49,
     gift_smash2 = 50,
     gift_smash3 = 51,
+
+    arrow = 34,
 }
 
 sprite_blocks = {
@@ -84,6 +86,52 @@ system = {
     width = 128,
     height = 128,
 }
+
+-- utilities
+pool = {}
+function pool.create()
+    local p = {
+        data = {},
+    }
+    setmetatable(p, { __index = pool })
+
+    return p
+end
+
+function pool:add()
+    local item = nil
+    local data = self.data
+    for i=1, #data do
+        if data[i]._pool_active == false then
+            item = data[i]
+            break
+        end
+    end
+
+    if item == nil then
+        item = {}
+        data[#data + 1] = item
+    end
+
+    item._pool_active = true
+
+    return item
+end
+
+function pool:remove(item)
+    item._pool_active = false
+end
+
+function pool:for_each(f)
+    local data = self.data
+    for i=1, #data do
+        local item = data[i]
+        if item._pool_active then
+            local result = f(data[i])
+            if result ~= nil then return result end
+        end
+    end
+end
 
 -- game logic
 player_states = {
@@ -152,6 +200,9 @@ map = {
     house_position = 0,
     house_width = 0,
     house_distance = 0,
+
+    targets = pool.create(),
+    target_radius = 5,
 }
 
 function map:generate()
@@ -252,8 +303,17 @@ function map:generate()
             end
     
             local sprite = sprites.roof
-            if chimney then sprite = sprites.roof_chimney end
-            column[2 + self.house_position + 1] = sprite
+            local j = 2 + self.house_position + 1
+            if chimney then
+                sprite = sprites.roof_chimney
+
+                -- note target
+                local target = self.targets:add()
+                local x, y = map:get_xy(#self.data + 1, j)
+                target.x, target.y = x + 4, y + 4
+                target.hit = false
+            end
+            column[j] = sprite
         end
     end
 
@@ -274,12 +334,27 @@ function map:get(x, y)
     return nil
 end
 
+function map:get_xy(i, j)
+    return 8 * (i - 1) - self.shift, 128 - 8 * j
+end
+
 function map:update()
     self.shift = self.shift + self.speed
     while self.shift >= 8 do
         self:generate()
         self.shift = self.shift - 8
     end
+
+    local targets = self.targets
+    targets:for_each(function (target)
+        target.x = target.x - self.speed
+        if target.x <= 16 then
+            -- todo: -1
+            game.score = game.score - 1
+            target.hit = true
+            targets:remove(target)
+        end
+    end)
 end
 
 projectiles = {
@@ -287,25 +362,11 @@ projectiles = {
     offset_x = -1,
     offset_y = -2,
 
-    pool = { },
+    pool = pool.create(),
 }
 
 function projectiles:add(x, y)
-    local pool = self.pool
-    local p = nil
-    for i=1, #pool do
-        if not pool[i].active then
-            p = pool[i]
-            break
-        end
-    end
-
-    if p == nil then
-        p = {}
-        pool[#pool + 1] = p
-    end
-
-    p.active = true
+    local p = self.pool:add()
     p.x, p.y = x, y
     p.vx = 2
     p.vy = 2
@@ -313,31 +374,37 @@ end
 
 function projectiles:update()
     local pool = self.pool
-    for i=1, #pool do
-        local p = pool[i]
-        if p.active and p.debug == nil then
-            p.vy = p.vy + projectiles.g
-            p.x = p.x + p.vx
-            p.y = p.y + p.vy
+    local targets = map.targets
+    local radius = map.target_radius
+    pool:for_each(function (p)
+        p.vy = p.vy + projectiles.g
+        p.x = p.x + p.vx
+        p.y = p.y + p.vy
 
-            -- check for collisions
-            -- offset to middle and for sprite
+        -- check for collisions with targets
+        local x, y = p.x, p.y
+        local hit = targets:for_each(function (target)
+            if x >= target.x - radius and x <= target.x + radius and y >= target.y - radius and y <= target.y + radius then
+                target.hit = true
+                targets:remove(target)
+                return true
+            end
+        end)
+
+        if hit then
+            pool:remove(p)
+            game.score = game.score + 1
+            -- todo: +1
+        else
+            -- collisions with walls
             local map_sprite = map:get(p.x, p.y)
             if map_sprite ~= nil and map_sprite ~= 0 and not fget(map_sprite, 0) then
-                -- p.active = false
-                p.debug = colors.red
-                if fget(map_sprite, 1) then
-                    p.debug = colors.green
-                    game.score = game.score + 1
-                else
-                    game.score = game.score - 1
-                    -- todo: splat
-                end
+                pool:remove(p)
+                game.score = game.score - 1
+                -- todo: splat and -1
             end
-        elseif p.debug ~= nil then
-            p.x = p.x - map.speed
         end
-    end
+    end)
 end
 
 game = {
@@ -385,26 +452,25 @@ end
 
 function map:draw()
     for i=1, #self.data do
-        local x = 8 * (i - 1) - self.shift
         local column = self.data[(self.base + i - 2) % #self.data + 1]
         for j=1, #column do
-            local y = 128 - 8 * j
+            local x, y = self:get_xy(i, j)
             local sprite = column[j]
             if sprite > 0 then spr(sprite, x, y) end
-            -- rectfill(x, y, x + 8, y + 8, sprite + 1)
         end
     end
+
+    self.targets:for_each(function (target)
+        if not target.hit then
+            spr(sprites.arrow, target.x - 3, target.y - 10)
+        end
+    end)
 end
 
 function projectiles:draw()
-    local pool = self.pool
-    for i=1, #pool do
-        local p = pool[i]
-        if p.active then
-            rectfill(p.x, p.y, p.x, p.y, p.debug or colors.yellow)
-            -- spr(sprites.gift, p.x + projectiles.offset_x, p.y + projectiles.offset_y)
-        end
-    end
+    self.pool:for_each(function (p)
+        spr(sprites.gift, p.x + projectiles.offset_x, p.y + projectiles.offset_y)
+    end)
 end
 
 function game:draw()
@@ -438,12 +504,12 @@ __gfx__
 40040404040405000400000000400000ff64446ff666666ff666666f000000000000000000000000000000000000000000000000000000000000000000000000
 55555555555550000400000004000000ff64446fffffffffffffffff000000000000000000000000000000000000000000000000000000000000000000000000
 fff02766000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0000000000000000000000000000000000000000000000000000000000000000
-77022500000000000000000000000000bbbbbbbbbbbbbbbbbbbbbb3bbbb33bbb0000000000000000000000000000000000000000000000000000000000000000
-88823050000050000000000000000000bbbbbbbbbbbbbbbbb33bbbbbbb3333bb0000000000000000000000000000000000000000000000000000000000000000
-88333005000500000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbb3333bb0000000000000000000000000000000000000000000000000000000000000000
-38839005000050500000000000000000bbbbbbbbbbbb333bbbbbbbbbbb3333bb0000000000000000000000000000000000000000000000000000000000000000
-99799050000045000000000000000000bbbbbbbbbbbbbbbbbb33333bbbb33bbb0000000000000000000000000000000000000000000000000000000000000000
-04040500000044400000000000000000bbbbbbbb3333bbbbbbbbbbbbbb5555bb0000000000000000000000000000000000000000000000000000000000000000
+770225000000000000bbb30000000000bbbbbbbbbbbbbbbbbbbbbb3bbbb33bbb0000000000000000000000000000000000000000000000000000000000000000
+888230500000500000bbb30000000000bbbbbbbbbbbbbbbbb33bbbbbbb3333bb0000000000000000000000000000000000000000000000000000000000000000
+883330050005000000bbb30000000000bbbbbbbbbbbbbbbbbbbbbbbbbb3333bb0000000000000000000000000000000000000000000000000000000000000000
+38839005000050500bbbbb3000000000bbbbbbbbbbbb333bbbbbbbbbbb3333bb0000000000000000000000000000000000000000000000000000000000000000
+997990500000450000bbb30000000000bbbbbbbbbbbbbbbbbb33333bbbb33bbb0000000000000000000000000000000000000000000000000000000000000000
+0404050000004440000b300000000000bbbbbbbb3333bbbbbbbbbbbbbb5555bb0000000000000000000000000000000000000000000000000000000000000000
 55555000000444480000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0000000000000000000000000000000000000000000000000000000000000000
 07000000f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 f7f00000070f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
