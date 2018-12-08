@@ -128,6 +128,10 @@ system = {
     height = 128,
 }
 
+-- debugging
+local debug = false
+debug_message = nil
+
 -- utilities
 pool = {}
 function pool.create()
@@ -467,7 +471,6 @@ function projectiles:update()
         if hit then
             pool:remove(p)
             game.score = game.score + 1
-            -- todo: +1
         else
             -- collisions with walls
             local map_sprite = map:get(p.x, p.y)
@@ -698,7 +701,6 @@ function print_center(text, y)
     print(text, system.width / 2 - (4 * #text) / 2, y)
 end
 
--- todo: don't concatenate strings every frame!
 function game:draw()
     color(colors.white)
 
@@ -739,6 +741,10 @@ function _draw()
     map:draw()
     player:draw()
     projectiles:draw()
+
+    if debug and debug_message ~= nil then
+        print(debug_message, system.width - 4 * #debug_message, 0, colors.white)
+    end
 end
 
 __gfx__
