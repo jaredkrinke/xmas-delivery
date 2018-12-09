@@ -271,11 +271,21 @@ map = {
     house_position = 0,
     house_width = 0,
     house_distance = 0,
+    house_color = 0,
 
     targets = pool.create(),
     target_radius = 5,
 
     animations = pool.create(),
+}
+
+house_colors = {
+    colors.dark_blue,
+    colors.dark_purple,
+    colors.dark_green,
+    colors.dark_gray,
+    colors.indigo,
+    colors.blue,
 }
 
 function map:generate()
@@ -286,7 +296,10 @@ function map:generate()
 
     local column = self.data[base];
     for i=1,self.height do
-        column[i] = 0
+        if column[i] == nil then column[i] = {} end
+        local column = column[i]
+        column.sprite = 0
+        column.color = nil
     end
 
     -- ground
@@ -302,7 +315,7 @@ function map:generate()
             sprite = sprites.ground_4
         end
 
-        column[i] = sprite
+        column[i].sprite = sprite
     end
 
     -- state machine
@@ -327,6 +340,7 @@ function map:generate()
             self.house_height = h
             self.house_position = flr(rnd(h)) + 1
             self.house_width = 0
+            self.house_color = house_colors[flr(rnd(#house_colors)) + 1]
         end
     elseif self.state == gen_state_names.house_before or self.state == gen_state_names.house_after then
         local chimney = false
@@ -370,7 +384,9 @@ function map:generate()
                 if i == 1 and chimney then
                     sprite = sprites.house_door
                 end
-                column[2 + i] = sprite
+                local item = column[2 + i]
+                item.sprite = sprite
+                item.color = self.house_color
             end
     
             local sprite = sprites.roof
@@ -386,21 +402,21 @@ function map:generate()
                 target.timer = 0
                 target.hit = false
             end
-            column[j] = sprite
+            column[j].sprite = sprite
         end
     end
 
     self.base = (base % self.width) + 1
 end
 
-function map:get(x, y)
+function map:get_sprite(x, y)
     if x > 1 and y > 1 and x < 128 and y < 128 then
         local sx = flr((x + self.shift) / 8)
         local dx = (self.base + sx - 1) % #self.data + 1
         local column = self.data[dx]
         local sy = flr((127 - y) / 8) + 1
         if sy <= #column then
-            return column[sy]
+            return column[sy].sprite
         end
     end
 
@@ -507,7 +523,7 @@ function projectiles:update()
             end
         else
             -- collisions with walls
-            local map_sprite = map:get(p.x, p.y)
+            local map_sprite = map:get_sprite(p.x, p.y)
             if map_sprite ~= nil and map_sprite ~= 0 and not fget(map_sprite, 0) then
                 pool:remove(p)
                 if p.gift then
@@ -772,8 +788,14 @@ function map:draw()
         local column = self.data[(self.base + i - 2) % #self.data + 1]
         for j=1, #column do
             local x, y = self:get_xy(i, j)
-            local sprite = column[j]
-            if sprite > 0 then spr(sprite, x, y) end
+            local item = column[j]
+            local sprite = item.sprite
+            if sprite > 0 then
+                local color = item.color
+                if color ~= nil then pal(colors.peach, color) end
+                spr(sprite, x, y)
+                if color ~= nil then pal() end
+            end
         end
     end
 
