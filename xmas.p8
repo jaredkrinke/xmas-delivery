@@ -184,6 +184,132 @@ function pool:is_empty()
     return not self:for_each(function (item) return true end)
 end
 
+queue = {}
+function queue.create()
+    local q = {
+        _list = {},
+        _count = 0
+    }
+    setmetatable(q, { __index = queue })
+
+    return q
+end
+
+function queue:enqueue(item)
+    local list = self._list
+    local count = self._count
+    for i=1, count do
+        list[count + 1 - i] = list[count - i]
+    end
+    list[1] = item
+    self._count = count + 1
+end
+
+function queue:dequeue(item)
+    local item = nil
+    local count = self._count
+    if count > 0 then
+        local list = self._list
+        item = list[count]
+        list[count] = nil
+        self._count = count - 1
+    end
+    return item
+end
+
+function queue:is_empty()
+    return self._count == 0
+end
+
+storyboard = {}
+storyboard_states = {
+    initial = 1,
+    running = 2,
+    paused = 3,
+    done = 4,
+}
+
+function storyboard.create(steps)
+    local sb = {
+        _steps = steps,
+
+        _state = storyboard_states.initial,
+        _index = 1,
+        _timer = 0,
+    }
+    setmetatable(sb, { __index = storyboard })
+
+    return sb
+end
+
+function storyboard:reset()
+    self._index = 0
+    self._state = storyboard_states.initial
+end
+
+function storyboard:start()
+    self:reset()
+    self:resume()
+end
+
+function storyboard:pause()
+    self._state = storyboard_states.paused
+end
+
+function storyboard:resume()
+    local index = self._index + 1
+    self._index = index
+    if index <= #self._steps then
+        local step = self._steps[index]
+        local period = step[1]
+        if period >= 0 then
+            self._timer = period
+            self._state = storyboard_states.running
+        else
+            self:pause()
+        end
+
+        self:set_progress(0)
+    else
+        self._state = storyboard_states.done
+    end
+end
+
+function storyboard:is_active()
+    return self._state == storyboard_states.running or self._state == storyboard_states.paused
+end
+
+function storyboard:get_state()
+    return self._state, self._index, self._progress
+end
+
+function storyboard:set_progress(progress)
+    self._progress = progress
+    local callback = self._steps[self._index][2]
+    if callback ~= nil then
+        callback(self, progress)
+    end
+end
+
+function storyboard:update()
+    if self._state == storyboard_states.running then
+        self._timer = self._timer - 1
+
+        local step = self._steps[self._index]
+        local progress = 1
+        if self._timer > 0 then
+            local period = step[1]
+            progress = (step[1] - self._timer) / step[1]
+        end
+
+        self:set_progress(progress)
+
+        if self._timer <= 0 then
+            self:resume()
+        end
+    end
+end
+
 -- game logic
 player_states = {
     idle = 1,
@@ -658,7 +784,43 @@ levels = {
     },
 }
 
+marquee = storyboard.create({
+    { 10, function (self, progress) self.progress = progress / 2 end },
+    { -1, function (self, progress) self.progress = 0.5 end },
+    { 10, function (self, progress)
+        self.progress = 0.5 + progress / 2
+        if progress == 1 then
+            if not self.queue:is_empty() then
+                self.lines = self.queue:dequeue()
+                self:reset()
+            end
+        end
+    end },
+})
+marquee.queue = queue.create()
+
+function marquee:show(lines)
+    if self:is_active() then
+        self.queue:enqueue(lines)
+    else
+        self.lines = lines
+        self:start()
+    end
+end
+
+local final_messages = {
+    { 1.0, "christmas cheer reigns supreme!" },
+    { 0.95, "merry christmas to all!" },
+    { 0.9, "that was a pretty good christmas" },
+    { 0.8, "that was an ok christmas" },
+    { 0.7, "a pretty mediocre christmas..." },
+    { 0.6, "merry christmas?" },
+    { 0.5, "better luck next year" },
+    { 0, "there goes christmas :(" },
+}
+
 game = {
+    min_overall_score = 0.3,
 }
 
 function game:init()
@@ -667,13 +829,33 @@ function game:init()
     self.score = 0
     self.gifts = 0
     self.houses = 0
-    self.last_z = 0
+    self.last_z = false
     self.score_numerator = 0
     self.score_denominator = 0
+    self.last_overall_score = 0.5
+
+    self:load_level()
 end
 
 function game:get_overall_score()
     return (0.5 + 0.5 * (self.level - 2) / (#levels - 2)) * self.score_numerator / self.score_denominator
+end
+
+function game:load_level()
+    self.state = game_states.info
+
+    local lines = {}
+    local level = levels[self.level]
+    if level.name then
+        lines[1] = "now entering:"
+        lines[2] = level.name .. " (population: " .. level.houses .. ")"
+    end
+    if level.text ~= nil then
+        for i=1, #level.text do
+            lines[#lines + 1] = level.text[i]
+        end
+    end
+    marquee:show(lines)
 end
 
 function game:update()
@@ -682,7 +864,8 @@ function game:update()
     local z = btn(buttons.z)
     local last_state = self.state
     if self.state == game_states.info then
-        if not z and self.last_z then
+        if not z and self.last_z and (marquee:get_state() == storyboard_states.paused) then
+            marquee:resume()
             if levels[self.level].houses then
                 self.state = game_states.in_game
             else
@@ -696,28 +879,36 @@ function game:update()
                 self.state = game_states.result
                 self.score_numerator = self.score_numerator + self.score
                 self.score_denominator = self.score_denominator + levels[self.level].houses
+                self.last_overall_score = self:get_overall_score()
+                marquee:show({"", "christmas cheer: " .. ceil(self.last_overall_score * 100) .. "%"})
             else
-                self.text = {"try again"}
                 self.state = game_states.info
+                marquee:show({"try again"})
                 reset = true
             end
         end
     elseif self.state == game_states.result then
-        if not z and self.last_z then
+        if not z and self.last_z and (marquee:get_state() == storyboard_states.paused) then
+            marquee:resume()
             advance = true
         end
     end
 
     if advance then
-        if self.level == #levels then
+        local score = self:get_overall_score()
+        if self.level == #levels or (self.level > 3 and score <= game.min_overall_score) then
             self.state = game_states.final
-        elseif self.level > 3 and self:get_overall_score() <= 0.3 then
-            self.state = game_states.final
+            for i=1,#final_messages do
+                local message = final_messages[i]
+                if score >= message[1] then
+                    marquee:show({"", message[2]})
+                    break
+                end
+            end
         else
             reset = true
             self.level = self.level + 1
-            self.text = nil
-            self.state = game_states.info
+            self:load_level()
         end
     end
 
@@ -738,6 +929,8 @@ function game:update()
     else
         self.last_z = false
     end
+
+    marquee:update()
 end
 
 function _init()
@@ -828,20 +1021,16 @@ function projectiles:draw()
     end)
 end
 
-function print_center(text, y)
-    print(text, system.width / 2 - (4 * #text) / 2, y)
+function marquee:draw()
+    local center = 1.5 * system.width - self.progress * system.width * 2
+    local lines = self.lines
+    local y = 16
+    for i=1, #lines do
+        local line = lines[i]
+        print(line, center - 4 * #line / 2, y)
+        y = y + 6
+    end
 end
-
-local final_messages = {
-    { 1.0, "christmas cheer reigns supreme!" },
-    { 0.95, "merry christmas to all!" },
-    { 0.9, "that was a pretty good christmas" },
-    { 0.8, "that was an ok christmas" },
-    { 0.7, "a pretty mediocre christmas..." },
-    { 0.6, "merry christmas?" },
-    { 0.5, "better luck next year" },
-    { 0, "there goes christmas :(" },
-}
 
 function game:draw()
     color(colors.white)
@@ -851,51 +1040,20 @@ function game:draw()
         print("gifts: " .. self.gifts, 0, 6)
     end
 
-    local prompt = false
-    if self.state == game_states.info then
-        local y = 16
-        local level = levels[self.level]
-
-        if level.name then
-            print_center("now entering:", y)
-            y = y + 6
-            print_center(level.name .. " (population: " .. level.houses .. ")", y)
-            y = y + 12
-        end
-
-        text = self.text or level.text
-        if text then
-            for i=1, #text do
-                print_center(text[i], y)
-                y = y + 6
-            end
-        end
-
-        prompt = true
-    elseif self.state == game_states.in_game then
-    elseif self.state == game_states.result or self.state == game_states.final then
-        local y = 22
-        local score = self:get_overall_score()
-        print_center("christmas cheer: " .. ceil(score * 100) .. "%", y)
-
-        if self.state == game_states.final then
-            y = y + 12
-            for i=1,#final_messages do
-                local message = final_messages[i]
-                if score >= message[1] then
-                    print_center(message[2], y)
-                    break
-                end
-            end
-        else
-            prompt = true
-        end
-    elseif self.state == game_states.final then
+    if marquee:is_active() then
+        marquee:draw()
     end
 
-    if prompt then
+    local prompt = self.state == game_states.info or self.state == game_states.result
+    if prompt and (marquee:get_state() == storyboard_states.paused) then
         print("press 'z' to continue >", 36, 88)
     end
+
+    local x, y = 64, 0
+    print("christmas cheer", x + 32 - 15 * 4 / 2, y, colors.white)
+    rectfill(x, y + 6, x + 64, y + 11, colors.light_gray)
+    rectfill(x, y + 7, x + 64, y + 10, colors.dark_gray)
+    rectfill(x, y + 7, x + ceil(64 * self.last_overall_score), y + 10, colors.red)
 end
 
 function _draw()
