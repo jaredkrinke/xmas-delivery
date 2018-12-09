@@ -574,12 +574,14 @@ game = {
 }
 
 function game:init()
-    game.state = game_states.info
-    game.level = 1
-    game.score = 0
-    game.gifts = 0
-    game.houses = 0
-    game.last_z = 0
+    self.state = game_states.info
+    self.level = 1
+    self.score = 0
+    self.gifts = 0
+    self.houses = 0
+    self.last_z = 0
+    self.score_numerator = 0
+    self.score_denominator = 0
 end
 
 function game:get_overall_score()
@@ -604,8 +606,8 @@ function game:update()
             local minimum = levels[self.level].minimum
             if not minimum or game.score >= minimum then
                 self.state = game_states.result
-                self.score_numerator = self.score
-                self.score_denominator = levels[self.level].houses
+                self.score_numerator = self.score_numerator + self.score
+                self.score_denominator = self.score_denominator + levels[self.level].houses
             else
                 self.text = {"try again"}
                 self.state = game_states.info
@@ -761,18 +763,24 @@ function game:draw()
 
         prompt = true
     elseif self.state == game_states.in_game then
-    elseif self.state == game_states.result then
+    elseif self.state == game_states.result or self.state == game_states.final then
+        local y = 24
         local score = self:get_overall_score()
-        print_center("christmas cheer: " .. ceil(score * 100) .. "%", 24)
-        prompt = true
-    elseif self.state == game_states.final then
-        local score = self:get_overall_score()
-        for i=1,#final_messages do
-            local message = final_messages[i]
-            if score >= message[1] then
-                print_center(message[2], 24)
+        print_center("christmas cheer: " .. ceil(score * 100) .. "%", y)
+
+        if self.state == game_states.final then
+            y = y + 12
+            for i=1,#final_messages do
+                local message = final_messages[i]
+                if score >= message[1] then
+                    print_center(message[2], y)
+                    break
+                end
             end
+        else
+            prompt = true
         end
+    elseif self.state == game_states.final then
     end
 
     if prompt then
