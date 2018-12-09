@@ -60,6 +60,8 @@ sprites = {
     gift_smash2 = 50,
     gift_smash3 = 51,
 
+    coal = 35,
+
     arrow = 34,
 
     check = 52,
@@ -208,11 +210,20 @@ function player:update()
 
     if game.state == game_states.in_game then
         if self.state == player_states.idle then
-            if self.counter == 0 and game.gifts > 0 and btn(buttons.z) then
-                self.state = player_states.throwing
-                self.counter = self.gift_period
-                game.gifts = game.gifts - 1
-                projectiles:add(self.x, self.y)
+            if self.counter == 0 then
+                local throw = nil -- true for gift; false for coal
+                if game.gifts > 0 and btn(buttons.z) then
+                    throw = true
+                    game.gifts = game.gifts - 1
+                elseif btn(buttons.x) then
+                    throw = false
+                end
+
+                if throw ~= nil then
+                    self.state = player_states.throwing
+                    self.counter = self.gift_period
+                    projectiles:add(self.x, self.y, throw)
+                end
             end
         elseif self.state == player_states.throwing then
             if not btn(buttons.z) then
@@ -237,13 +248,16 @@ map = {
     default_speed = 1,
     default_max_distance = 4,
     default_max_house_width = 4,
+    default_coal_rate = 0,
 
     speed = 1,
+    max_distance = 4,
+    max_house_width = 4,
+    coal_rate = 0,
+
     max_house_height = 3,
     width = system.width / 8 + 1,
     min_house_width = 1,
-    max_house_width = 4,
-    max_distance = 4,
     min_initial_distance = 20,
 
     height = 2 + 3 + 1,
@@ -368,6 +382,7 @@ function map:generate()
                 local target = self.targets:add()
                 local x, y = map:get_xy(#self.data + 1, j)
                 target.x, target.y = x + 4, y + 4
+                target.gift = (rnd() >= self.coal_rate)
                 target.timer = 0
                 target.hit = false
             end
@@ -396,10 +411,11 @@ function map:get_xy(i, j)
     return 8 * (i - 1) - self.shift, 128 - 8 * j
 end
 
-function map:add_animation(sequence, x, y)
+function map:add_animation(sequence, x, y, color)
     local animation = self.animations:add()
     animation.sequence = sequence
     animation.x, animation.y = x, y
+    animation.color = color
     animation.timer = animation.sequence.period
     animation.index = 1
 end
@@ -439,14 +455,22 @@ end
 
 projectiles = {
     g = 0.5,
-    offset_x = -1,
-    offset_y = -2,
+    offset_x = -2,
+    offset_y = -3,
 
     pool = pool.create(),
 }
 
-function projectiles:add(x, y)
+projectile_colors = {
+    colors.red,
+    colors.pink,
+    colors.orange,
+}
+
+function projectiles:add(x, y, gift)
     local p = self.pool:add()
+    p.gift = gift
+    if (gift) then p.color = projectile_colors[flr(rnd(#projectile_colors)) + 1] end
     p.x, p.y = x, y
     p.vx = 2
     p.vy = 2
@@ -463,24 +487,33 @@ function projectiles:update()
 
         -- check for collisions with targets
         local x, y = p.x, p.y
-        local hit = targets:for_each(function (target)
+        local gift = p.gift
+        local hit_target = targets:for_each(function (target)
             if x >= target.x - radius and x <= target.x + radius and y >= target.y - radius and y <= target.y + radius then
                 target.hit = true
                 targets:remove(target)
-                map:add_animation(sequences.check, target.x - 2, target.y - 4)
-                return true
+                return target
             end
         end)
 
-        if hit then
+        if hit_target ~= nil then
             pool:remove(p)
-            game.score = game.score + 1
+
+            if p.gift == hit_target.gift then
+                game.score = game.score + 1
+                map:add_animation(sequences.check, hit_target.x - 2, hit_target.y - 4)
+            else
+                map:add_animation(sequences.ex, hit_target.x - 2, hit_target.y - 4)
+            end
         else
             -- collisions with walls
             local map_sprite = map:get(p.x, p.y)
             if map_sprite ~= nil and map_sprite ~= 0 and not fget(map_sprite, 0) then
                 pool:remove(p)
-                map:add_animation(sequences.gift_smash, x - projectiles.offset_x, y - projectiles.offset_y)
+                if p.gift then
+                    map:add_animation(sequences.gift_smash, x - projectiles.offset_x, y - projectiles.offset_y, p.color)
+                    -- todo: consider animation for coal smash
+                end
             end
         end
     end)
@@ -552,11 +585,25 @@ levels = {
         speed = 1.25
     },
     {
+        text = {
+            "use 'x' to toss coal",
+            "",
+            "only throw coal when indicated",
+            "or you'll upset good little",
+            "boys and girls",
+        },
+        houses = 1,
+        gifts = 2,
+        coal_rate = 1,
+        minimum = 1,
+    },
+    {
         name = generate_name(),
         text = { "(let's speed things up)" },
         houses = 8,
         gifts = 9,
         speed = 1.5,
+        coal_rate = 0.15,
     },
     {
         name = generate_name(),
@@ -564,6 +611,7 @@ levels = {
         houses = 10,
         gifts = 11,
         speed = 1.75,
+        coal_rate = 0.2,
     },
     {
         name = generate_name(),
@@ -571,6 +619,7 @@ levels = {
         houses = 15,
         gifts = 16,
         speed = 2,
+        coal_rate = 0.2,
         max_distance = 3,
     },
     {
@@ -578,6 +627,7 @@ levels = {
         houses = 20,
         gifts = 20,
         speed = 2,
+        coal_rate = 0.2,
         max_distance = 1,
         max_house_width = 2
     },
@@ -587,6 +637,7 @@ levels = {
         houses = 25,
         gifts = 25,
         speed = 2.5,
+        coal_rate = 0.2,
         max_distance = 1,
         max_house_width = 2
     },
@@ -664,6 +715,7 @@ function game:update()
         map.speed = level.speed or map.default_speed
         map.max_distance = level.max_distance or map.default_max_distance
         map.max_house_width = level.max_house_width or map.default_max_house_width
+        map.coal_rate = level.coal_rate or map.default_coal_rate
     end
 
     if last_state == self.state then
@@ -727,18 +779,31 @@ function map:draw()
 
     self.targets:for_each(function (target)
         if not target.hit then
-            spr(sprites.arrow, target.x - 3, target.y - 10 - 2 * sin((target.timer % 45) / 45))
+            local x, y = target.x, target.y - 10 - 2 * sin((target.timer % 45) / 45)
+            pal(colors.peach, colors.red)
+            spr(target.gift and sprites.gift or sprites.coal, x + projectiles.offset_x, y - 1 + projectiles.offset_y)
+            pal()
+            spr(sprites.arrow, x - 3, y)
         end
     end)
 
     self.animations:for_each(function (animation)
+        local color = animation.color
+        if color ~= nil then pal(colors.peach, color) end
         spr(animation.sequence.frames[animation.index], animation.x, animation.y)
+        if color ~= nil then pal() end
     end)
 end
 
 function projectiles:draw()
     self.pool:for_each(function (p)
-        spr(sprites.gift, p.x + projectiles.offset_x, p.y + projectiles.offset_y)
+        if p.gift then
+            pal(colors.peach, p.color)
+            spr(sprites.gift, p.x + projectiles.offset_x, p.y + projectiles.offset_y)
+            pal()
+        else
+            spr(sprites.coal, p.x + projectiles.offset_x, p.y + projectiles.offset_y)
+        end
     end)
 end
 
@@ -827,10 +892,10 @@ end
 __gfx__
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000005000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000005000000000000008800000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000050000000000000008800000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000700000000000000000000005050000000000008800000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000088800000000000000000004500000000000008800000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000700000000000000000000005050555555555558855500000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000088800000000000000000004500555555555558855500000000000000000000000000000000000000000000000000000000000000000000000000000000
 02000088770000000000000000004440555555555555555500000000000000000000000000000000000000000000000000000000000000000000000000000000
 00200007ff0000000000000000044444777777777777777700000000000000000000000000000000000000000000000000000000000000000000000000000000
 02220000fff087660744666666644440ffffffffffffffffffffffff000000000000000000000000000000000000000000000000000000000000000000000000
@@ -841,22 +906,22 @@ __gfx__
 09999999999990500040000000040000ff64496ff6cccc6ff6b33e6f000000000000000000000000000000000000000000000000000000000000000000000000
 40040404040405000400000000400000ff64446ff666666ff666666f000000000000000000000000000000000000000000000000000000000000000000000000
 55555555555550000400000004000000ff64446fffffffffffffffff000000000000000000000000000000000000000000000000000000000000000000000000
-fff02766000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0000000000000000000000000000000000000000000000000000000000000000
-770225000000000000bbb30000000000bbbbbbbbbbbbbbbbbbbbbb3bbbb33bbb0000000000000000000000000000000000000000000000000000000000000000
-888230500000500000bbb30000000000bbbbbbbbbbbbbbbbb33bbbbbbb3333bb0000000000000000000000000000000000000000000000000000000000000000
-883330050005000000bbb30000000000bbbbbbbbbbbbbbbbbbbbbbbbbb3333bb0000000000000000000000000000000000000000000000000000000000000000
-38839005000050500bbbbb3000000000bbbbbbbbbbbb333bbbbbbbbbbb3333bb0000000000000000000000000000000000000000000000000000000000000000
+fff02766000000000000000006550000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0000000000000000000000000000000000000000000000000000000000000000
+770225000000000000bbb30065550000bbbbbbbbbbbbbbbbbbbbbb3bbbb33bbb0000000000000000000000000000000000000000000000000000000000000000
+888230500000500000bbb30055655000bbbbbbbbbbbbbbbbb33bbbbbbb3333bb0000000000000000000000000000000000000000000000000000000000000000
+883330050005000000bbb30005555000bbbbbbbbbbbbbbbbbbbbbbbbbb3333bb0000000000000000000000000000000000000000000000000000000000000000
+38839005000050500bbbbb3000500000bbbbbbbbbbbb333bbbbbbbbbbb3333bb0000000000000000000000000000000000000000000000000000000000000000
 997990500000450000bbb30000000000bbbbbbbbbbbbbbbbbb33333bbbb33bbb0000000000000000000000000000000000000000000000000000000000000000
 0404050000004440000b300000000000bbbbbbbb3333bbbbbbbbbbbbbb5555bb0000000000000000000000000000000000000000000000000000000000000000
 55555000000444480000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0000000000000000000000000000000000000000000000000000000000000000
-07000000f00000000000000000000000000000000000000000000000820000887700007700000000000000000000000000000000000000000000000000000000
-f7f00000070f0000000000000000000000000bb30000077700000b00882008827770077700000800000000000000000000000000000000000000000000000000
-f7f00000070000000000f000000000000000bb30000077700000bb00088288200777777000008800000000000000000000000000000000000000000000000000
-00000000f70f000007000000000000f0b30bb3007707770000b00b00008882000077770000000800000000000000000000000000000000000000000000000000
-0000000000000000f700f00000000000bb3b3000777770000bb30b00008882000077770008820800000000000000000000000000000000000000000000000000
-000000000000000000000000f0000f000bb300000777000000300b00088228200777777000000800000000000000000000000000000000000000000000000000
-0000000000000000000000000700000000300000007000000000bb30882008827770077700008820000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000820000887700007700000000000000000000000000000000000000000000000000000000
+07070000000000000000000000000000000000000000000000000000820000887700007700000000000000000000000000000000000000000000000000000000
+ff7ff0000f707ff00000007f0000000000000bb30000077700000b00882008827770077700000800000000000000000000000000000000000000000000000000
+7777700000f0707000000000000000000000bb30000077700000bb00088288200777777000008800000000000000000000000000000000000000000000000000
+ff7ff000770700000000000700000000b30bb3007707770000b00b00008882000077770000000800000000000000000000000000000000000000000000000000
+00000000f0700f000000070000000000bb3b3000777770000bb30b00008882000077770008820800000000000000000000000000000000000000000000000000
+000000000f0f000000007000000000000bb300000777000000300b00088228200777777000000800000000000000000000000000000000000000000000000000
+0000000000000000f070000f0000000700300000007000000000bb30882008827770077700008820000000000000000000000000000000000000000000000000
+000000000000000000f0f000f0700000000000000000000000000000820000887700007700000000000000000000000000000000000000000000000000000000
 __gff__
 0000000001020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
