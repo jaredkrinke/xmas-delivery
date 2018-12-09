@@ -487,8 +487,7 @@ game_states = {
     info = 2,
     in_game = 3,
     result = 4,
-    lost = 5,
-    won = 6,
+    final = 5,
 }
 
 names = {
@@ -572,19 +571,26 @@ levels = {
 }
 
 game = {
-    state = game_states.info,
-    level = 1,
-
-    score = 0,
-    gifts = 0,
-    houses = 0,
-    last_z = false
 }
+
+function game:init()
+    game.state = game_states.info
+    game.level = 1
+    game.score = 0
+    game.gifts = 0
+    game.houses = 0
+    game.last_z = 0
+end
+
+function game:get_overall_score()
+    return (0.5 + 0.5 * (self.level - 2) / (#levels - 2)) * self.score_numerator / self.score_denominator
+end
 
 function game:update()
     local advance = false
     local reset = false
     local z = btn(buttons.z)
+    local last_state = self.state
     if self.state == game_states.info then
         if not z and self.last_z then
             if levels[self.level].houses then
@@ -597,18 +603,26 @@ function game:update()
         if game.houses <= 0 and map.state == gen_state_names.initial and map.targets:is_empty() then
             local minimum = levels[self.level].minimum
             if not minimum or game.score >= minimum then
-                advance = true
+                self.state = game_states.result
+                self.score_numerator = self.score
+                self.score_denominator = levels[self.level].houses
             else
                 self.text = {"try again"}
                 self.state = game_states.info
                 reset = true
             end
         end
+    elseif self.state == game_states.result then
+        if not z and self.last_z then
+            advance = true
+        end
     end
 
     if advance then
         if self.level == #levels then
-            self.state = game_states.won
+            self.state = game_states.final
+        elseif self.level > 3 and self:get_overall_score() < 0.4 then
+            self.state = game_states.final
         else
             reset = true
             self.level = self.level + 1
@@ -626,10 +640,15 @@ function game:update()
         if level.speed ~= nil then map.speed = level.speed end
     end
 
-    self.last_z = z
+    if last_state == self.state then
+        self.last_z = z
+    else
+        self.last_z = false
+    end
 end
 
 function _init()
+    game:init()
     for i=1, map.width do
         map:generate()
     end
@@ -701,6 +720,17 @@ function print_center(text, y)
     print(text, system.width / 2 - (4 * #text) / 2, y)
 end
 
+local final_messages = {
+    { 1.0, "christmas cheer reigns supreme!" },
+    { 0.95, "merry christmas to all!" },
+    { 0.9, "that was a pretty good christmas" },
+    { 0.8, "that was an ok christmas" },
+    { 0.7, "a pretty mediocre christmas..." },
+    { 0.6, "merry christmas?" },
+    { 0.5, "better luck next year" },
+    { 0, "there goes christmas :(" },
+}
+
 function game:draw()
     color(colors.white)
 
@@ -709,6 +739,7 @@ function game:draw()
         print("gifts: " .. self.gifts, 0, 6)
     end
 
+    local prompt = false
     if self.state == game_states.info then
         local y = 16
         local level = levels[self.level]
@@ -728,10 +759,24 @@ function game:draw()
             end
         end
 
-        print("press 'z' to continue >", 36, 88)
+        prompt = true
     elseif self.state == game_states.in_game then
-    elseif self.state == game_states.won then
-        print("you win! merry christmas!", system.width / 2 - 50, 36)
+    elseif self.state == game_states.result then
+        local score = self:get_overall_score()
+        print_center("christmas cheer: " .. ceil(score * 100) .. "%", 24)
+        prompt = true
+    elseif self.state == game_states.final then
+        local score = self:get_overall_score()
+        for i=1,#final_messages do
+            local message = final_messages[i]
+            if score >= message[1] then
+                print_center(message[2], 24)
+            end
+        end
+    end
+
+    if prompt then
+        print("press 'z' to continue >", 36, 88)
     end
 end
 
