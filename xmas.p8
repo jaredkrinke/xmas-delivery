@@ -853,7 +853,7 @@ function game:draw()
         prompt = true
     elseif self.state == game_states.in_game then
     elseif self.state == game_states.result or self.state == game_states.final then
-        local y = 24
+        local y = 22
         local score = self:get_overall_score()
         print_center("christmas cheer: " .. ceil(score * 100) .. "%", y)
 
