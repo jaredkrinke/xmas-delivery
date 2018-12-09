@@ -696,7 +696,7 @@ function game:update()
     if advance then
         if self.level == #levels then
             self.state = game_states.final
-        elseif self.level > 3 and self:get_overall_score() < 0.4 then
+        elseif self.level > 3 and self:get_overall_score() <= 0.3 then
             self.state = game_states.final
         else
             reset = true
