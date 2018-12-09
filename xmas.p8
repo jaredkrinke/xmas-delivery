@@ -234,6 +234,10 @@ local gen_state_names = {
 }
 
 map = {
+    default_speed = 1,
+    default_max_distance = 4,
+    default_max_house_width = 4,
+
     speed = 1,
     max_house_height = 3,
     width = system.width / 8 + 1,
@@ -567,6 +571,24 @@ levels = {
         houses = 15,
         gifts = 16,
         speed = 2,
+        max_distance = 3,
+    },
+    {
+        name = generate_name(),
+        houses = 20,
+        gifts = 20,
+        speed = 2,
+        max_distance = 1,
+        max_house_width = 2
+    },
+    {
+        name = generate_name(),
+        text = { "(ludicrous speed--go!)" },
+        houses = 25,
+        gifts = 25,
+        speed = 2.5,
+        max_distance = 1,
+        max_house_width = 2
     },
 }
 
@@ -639,7 +661,9 @@ function game:update()
         self.gifts = level.gifts
         self.houses = level.houses
 
-        if level.speed ~= nil then map.speed = level.speed end
+        map.speed = level.speed or map.default_speed
+        map.max_distance = level.max_distance or map.default_max_distance
+        map.max_house_width = level.max_house_width or map.default_max_house_width
     end
 
     if last_state == self.state then
