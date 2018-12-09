@@ -285,7 +285,6 @@ house_colors = {
     colors.dark_green,
     colors.dark_gray,
     colors.indigo,
-    colors.blue,
 }
 
 function map:generate()
