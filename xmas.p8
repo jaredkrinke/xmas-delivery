@@ -764,7 +764,7 @@ levels = {
         name = generate_name(),
         text = { "(let's speed things up)" },
         houses = 8,
-        gifts = 9,
+        gifts = 8,
         speed = 1.5,
         coal_rate = 0.15,
     },
@@ -772,7 +772,7 @@ levels = {
         name = generate_name(),
         text = { "(hurry up!)" },
         houses = 10,
-        gifts = 11,
+        gifts = 10,
         speed = 1.75,
         coal_rate = 0.2,
     },
@@ -780,7 +780,7 @@ levels = {
         name = generate_name(),
         text = { "(full speed ahead!)" },
         houses = 15,
-        gifts = 16,
+        gifts = 15,
         speed = 2,
         coal_rate = 0.2,
         max_distance = 3,
@@ -792,7 +792,7 @@ levels = {
         speed = 2,
         coal_rate = 0.2,
         max_distance = 1,
-        max_house_width = 2
+        max_house_width = 2,
     },
     {
         name = generate_name(),
@@ -802,7 +802,7 @@ levels = {
         speed = 2.5,
         coal_rate = 0.2,
         max_distance = 1,
-        max_house_width = 2
+        max_house_width = 2,
     },
 }
 
