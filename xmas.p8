@@ -333,6 +333,45 @@ function storyboard:update()
 end
 
 -- game logic
+snow = {
+    layers = {},
+    period = 60,
+    vy = 1,
+    amplitude = 6,
+    timer = 0,
+}
+function snow:init()
+    for i=1, 3 do
+        local layer = {}
+        self.layers[i] = layer
+        for j=1, 20 do
+            local item = {
+                x0 = flr(rnd(system.width)),
+                y = flr(rnd(system.height)),
+                t = flr(rnd(snow.period)),
+            }
+            item.x = item.x0
+            
+            layer[j] = item
+        end
+    end
+end
+
+function snow:update()
+    local timer = (self.timer + 1) % snow.period
+    self.timer = timer
+    for i=1, #self.layers do
+        local layer = self.layers[i]
+        for j=1, #layer do
+            local item = layer[j]
+            item.x0 = item.x0 - i * map.speed
+            while item.x0 < 0 do item.x0 = item.x + 128 end
+            item.y = (item.y + snow.vy) % system.height
+            item.x = item.x0 + snow.amplitude * sin(((item.t + timer) % snow.period) / snow.period)
+        end
+    end
+end
+
 player_states = {
     idle = 1,
     throwing = 2,
@@ -851,11 +890,11 @@ meter = storyboard.create({
 })
 
 local final_messages = {
-    { 0.98, "christmas cheer reigns supreme!" },
-    { 0.95, "merry christmas to all!" },
-    { 0.9, "that was a pretty good christmas" },
-    { 0.8, "that was an ok christmas" },
-    { 0.7, "a pretty mediocre christmas..." },
+    { 0.9, "christmas cheer reigns supreme!" },
+    { 0.8, "merry christmas to all!" },
+    { 0.75, "that was a pretty good christmas" },
+    { 0.7, "that was an ok christmas" },
+    { 0.65, "a pretty mediocre christmas..." },
     { 0.6, "merry christmas?" },
     { 0.5, "better luck next year" },
     { 0, "there goes christmas :(" },
@@ -876,6 +915,8 @@ function game:init()
     self.last_overall_score = 0.35
 
     self:load_level()
+
+    map.speed = map.default_speed
 
     meter.score = self.last_overall_score
     meter.x = system.width
@@ -997,6 +1038,7 @@ function game:update()
 end
 
 function _init()
+    snow:init()
     game:init()
     for i=1, map.width do
         map:generate()
@@ -1004,6 +1046,7 @@ function _init()
 end
 
 function _update()
+    snow:update()
     game:update()
     map:update()
     projectiles:update()
@@ -1016,6 +1059,16 @@ function draw_sprite_block(block, x, y)
         local row = block[i]
         for j = 1, #row do
             spr(row[j], x + 8 * (j - 1), y + 8 * (i - 1))
+        end
+    end
+end
+
+function snow:draw()
+    for i=1, #self.layers do
+        local layer = self.layers[i]
+        for j=1, #layer do
+            local item = layer[j]
+            rectfill(item.x, item.y, item.x, item.y, colors.light_gray)
         end
     end
 end
@@ -1141,10 +1194,11 @@ end
 
 function _draw()
     cls()
-    game:draw()
     map:draw()
     player:draw()
     projectiles:draw()
+    snow:draw()
+    game:draw()
 
     if debug and debug_message ~= nil then
         print(debug_message, system.width - 4 * #debug_message, 0, colors.white)
