@@ -340,7 +340,6 @@ player_states = {
 
 player = {
     gift_period = 10,
-    speed = 2,
 
     x = 16,
     y_base = 56,
@@ -378,9 +377,6 @@ function player:update()
                 self.state = player_states.idle
             end
         end
-    
-        if self.x > 16 and btn(buttons.left) then self.x = self.x - self.speed end
-        if self.x < 96 and btn(buttons.right) then self.x = self.x + self.speed end
     else
         self.state = player_states.idle
     end
@@ -720,7 +716,8 @@ levels = {
     {
         text = {
             "hey, santa! it's time to spread",
-            "some christmas cheer!",
+            "some christmas cheer throughout",
+            "the 7 cities of grinch county!",
         },
     },
     {
@@ -736,11 +733,13 @@ levels = {
         minimum = 1,
     },
     {
+        number = 1,
         name = generate_name(),
         houses = 3,
         gifts = 4,
     },
     {
+        number = 2,
         name = generate_name(),
         text = { "(let's pick up the pace)" },
         houses = 5,
@@ -761,6 +760,7 @@ levels = {
         minimum = 1,
     },
     {
+        number = 3,
         name = generate_name(),
         text = { "(let's speed things up)" },
         houses = 8,
@@ -769,6 +769,7 @@ levels = {
         coal_rate = 0.15,
     },
     {
+        number = 4,
         name = generate_name(),
         text = { "(hurry up!)" },
         houses = 10,
@@ -777,6 +778,7 @@ levels = {
         coal_rate = 0.2,
     },
     {
+        number = 5,
         name = generate_name(),
         text = { "(full speed ahead!)" },
         houses = 15,
@@ -786,6 +788,7 @@ levels = {
         max_distance = 3,
     },
     {
+        number = 6,
         name = generate_name(),
         houses = 20,
         gifts = 20,
@@ -795,6 +798,7 @@ levels = {
         max_house_width = 2,
     },
     {
+        number = 7,
         name = generate_name(),
         text = { "(ludicrous speed--go!)" },
         houses = 25,
@@ -843,7 +847,7 @@ meter = storyboard.create({
 })
 
 local final_messages = {
-    { 1.0, "christmas cheer reigns supreme!" },
+    { 0.98, "christmas cheer reigns supreme!" },
     { 0.95, "merry christmas to all!" },
     { 0.9, "that was a pretty good christmas" },
     { 0.8, "that was an ok christmas" },
@@ -854,7 +858,6 @@ local final_messages = {
 }
 
 game = {
-    min_overall_score = 0.3,
 }
 
 function game:init()
@@ -885,8 +888,9 @@ function game:load_level()
     local lines = {}
     local level = levels[self.level]
     if level.name then
-        lines[1] = "now entering:"
+        lines[1] = "city " .. level.number .. " of 7:"
         lines[2] = level.name .. " (population: " .. level.houses .. ")"
+        lines[3] = ""
     end
     if level.text ~= nil then
         for i=1, #level.text do
@@ -930,12 +934,28 @@ function game:update()
             meter:resume()
             advance = true
         end
+    elseif self.state == game_states.final then
+        if not z and self.last_z then
+            if marquee:get_state() == storyboard_states.paused then
+                marquee:resume()
+            elseif marquee:get_state() == storyboard_states.done then
+                game:init()
+            end
+        end
     end
 
     if advance then
-        local score = self:get_overall_score()
-        if self.level == #levels or (self.level > 3 and score <= game.min_overall_score) then
+        local score = game.last_overall_score
+        if self.level == #levels then
             self.state = game_states.final
+
+            marquee:show({
+                "grinch county total:",
+                "" .. game.score_numerator .. " / " .. game.score_denominator,
+                "",
+                "christmas cheer: " .. ceil(100 * score) .. "%",
+            })
+
             for i=1,#final_messages do
                 local message = final_messages[i]
                 if score >= message[1] then
@@ -1105,9 +1125,13 @@ function game:draw()
 
     meter:draw()
 
-    local prompt = self.state == game_states.info or self.state == game_states.result
-    if prompt and (marquee:get_state() == storyboard_states.paused or meter:get_state() == storyboard_states.paused) then
-        print("press 'z' to continue >", 36, 88, colors.white)
+    local prompt = self.state == game_states.info or self.state == game_states.result or self.state == game_states.final
+    if prompt then
+        if marquee:get_state() == storyboard_states.paused or meter:get_state() == storyboard_states.paused then
+            print("press 'z' to continue >", 36, 88, colors.white)
+        elseif self.state == game_states.final and marquee:get_state() == storyboard_states.done then
+            print("press 'z' to start over >", 28, 88, colors.white)
+        end
     end
 end
 
