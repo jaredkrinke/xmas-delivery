@@ -242,6 +242,28 @@ function storyboard.create(steps)
     return sb
 end
 
+local function create_positional_update(x, y, done)
+    local f = function (self, progress)
+        if progress == 0 then
+            self.x0 = self.x
+            self.y0 = self.y
+            self.done = false
+        elseif progress >= 1 then
+            self.x = x
+            self.y = y
+            if not self.done and done ~= nil then
+                self.done = true
+                done(self)
+            end
+        else
+            self.x = self.x0 + progress * (x - self.x0)
+            self.y = self.y0 + progress * (y - self.y0)
+        end
+    end
+
+    return f
+end
+
 function storyboard:reset()
     self._index = 0
     self._state = storyboard_states.initial
@@ -784,10 +806,11 @@ levels = {
     },
 }
 
+local default_storyboard_period = 10
 marquee = storyboard.create({
-    { 10, function (self, progress) self.progress = progress / 2 end },
+    { default_storyboard_period, function (self, progress) self.progress = progress / 2 end },
     { -1, function (self, progress) self.progress = 0.5 end },
-    { 10, function (self, progress)
+    { default_storyboard_period, function (self, progress)
         self.progress = 0.5 + progress / 2
         if progress == 1 then
             if not self.queue:is_empty() then
@@ -807,6 +830,17 @@ function marquee:show(lines)
         self:start()
     end
 end
+
+local nop = function() end
+meter = storyboard.create({
+    { 15, nop },
+    { default_storyboard_period, create_positional_update(system.width / 2 - 64 / 2, 22) },
+    { 15, function (self) self.show_delta = flr(100 * (game.last_overall_score - self.score)) end },
+    { 30, function (self, progress) self.score = self.score + progress * (game.last_overall_score - self.score) end },
+    { -1, nop },
+    { 1, function(self) self.show_delta = nil end },
+    { default_storyboard_period, create_positional_update(system.width - 64, 0, function (self) self.last_score = game.last_overall_score end) },
+})
 
 local final_messages = {
     { 1.0, "christmas cheer reigns supreme!" },
@@ -832,13 +866,17 @@ function game:init()
     self.last_z = false
     self.score_numerator = 0
     self.score_denominator = 0
-    self.last_overall_score = 0.5
+    self.last_overall_score = 0.35
 
     self:load_level()
+
+    meter.score = self.last_overall_score
+    meter.x = system.width
+    meter.y = -12
 end
 
 function game:get_overall_score()
-    return (0.5 + 0.5 * (self.level - 2) / (#levels - 2)) * self.score_numerator / self.score_denominator
+    return (0.4 + 0.6 * (self.level - 2) / (#levels - 2)) * self.score_numerator / self.score_denominator
 end
 
 function game:load_level()
@@ -880,7 +918,7 @@ function game:update()
                 self.score_numerator = self.score_numerator + self.score
                 self.score_denominator = self.score_denominator + levels[self.level].houses
                 self.last_overall_score = self:get_overall_score()
-                marquee:show({"", "christmas cheer: " .. ceil(self.last_overall_score * 100) .. "%"})
+                meter:start()
             else
                 self.state = game_states.info
                 marquee:show({"try again"})
@@ -888,8 +926,8 @@ function game:update()
             end
         end
     elseif self.state == game_states.result then
-        if not z and self.last_z and (marquee:get_state() == storyboard_states.paused) then
-            marquee:resume()
+        if not z and self.last_z and (meter:get_state() == storyboard_states.paused) then
+            meter:resume()
             advance = true
         end
     end
@@ -931,6 +969,7 @@ function game:update()
     end
 
     marquee:update()
+    meter:update()
 end
 
 function _init()
@@ -1032,6 +1071,26 @@ function marquee:draw()
     end
 end
 
+function meter:draw()
+    local x, y = self.x, self.y
+    print("christmas cheer", x + 32 - 15 * 4 / 2, y, colors.white)
+    rectfill(x, y + 6, x + 64, y + 11, colors.light_gray)
+    rectfill(x, y + 7, x + 64, y + 10, colors.dark_gray)
+    rectfill(x, y + 7, x + ceil(64 * self.score), y + 10, colors.red)
+
+    local delta = self.show_delta
+    if delta ~= nil then
+        local text
+        if delta >= 0 then
+            text = "+"
+        else
+            text = ""
+        end
+        text = text .. delta .. "%"
+        print(text, system.width / 2 - 2 * #text, y + 13, colors.white)
+    end
+end
+
 function game:draw()
     color(colors.white)
 
@@ -1044,16 +1103,12 @@ function game:draw()
         marquee:draw()
     end
 
-    local prompt = self.state == game_states.info or self.state == game_states.result
-    if prompt and (marquee:get_state() == storyboard_states.paused) then
-        print("press 'z' to continue >", 36, 88)
-    end
+    meter:draw()
 
-    local x, y = 64, 0
-    print("christmas cheer", x + 32 - 15 * 4 / 2, y, colors.white)
-    rectfill(x, y + 6, x + 64, y + 11, colors.light_gray)
-    rectfill(x, y + 7, x + 64, y + 10, colors.dark_gray)
-    rectfill(x, y + 7, x + ceil(64 * self.last_overall_score), y + 10, colors.red)
+    local prompt = self.state == game_states.info or self.state == game_states.result
+    if prompt and (marquee:get_state() == storyboard_states.paused or meter:get_state() == storyboard_states.paused) then
+        print("press 'z' to continue >", 36, 88, colors.white)
+    end
 end
 
 function _draw()
