@@ -34,6 +34,16 @@ buttons = {
     x = 5,
 }
 
+sounds = {
+    smash = 0,
+    good = 1,
+    bad = 2,
+    throw = 3,
+    add = 4,
+    subtract = 5,
+    snow = 6,
+}
+
 sprites = {
     santa_ul = 0,
     santa_ur = 1,
@@ -412,6 +422,7 @@ function player:update()
                     self.state = player_states.throwing
                     self.counter = self.gift_period
                     projectiles:add(self.x, self.y, throw)
+                    sfx(sounds.throw)
                 end
             end
         elseif self.state == player_states.throwing then
@@ -654,6 +665,7 @@ function map:update()
             target.hit = true
             targets:remove(target)
             map:add_animation(sequences.ex, target.x - 4, target.y - 4)
+            sfx(sounds.bad)
         end
     end)
 end
@@ -707,14 +719,17 @@ function projectiles:update()
             if p.gift == hit_target.gift then
                 game.score = game.score + 1
                 map:add_animation(sequences.check, hit_target.x - 2, hit_target.y - 4)
+                sfx(sounds.good)
             else
                 map:add_animation(sequences.ex, hit_target.x - 2, hit_target.y - 4)
+                sfx(sounds.bad)
             end
         else
             -- collisions with walls
             local map_sprite = map:get_sprite(p.x, p.y)
             if map_sprite ~= nil and map_sprite ~= 0 and not fget(map_sprite, 0) then
                 pool:remove(p)
+                sfx(sounds.smash)
                 if p.gift then
                     map:add_animation(sequences.gift_smash, x - projectiles.offset_x, y - projectiles.offset_y, p.color)
                     -- todo: consider animation for coal smash
@@ -886,7 +901,16 @@ meter = storyboard.create({
     { 15, nop },
     { default_storyboard_period, create_positional_update(system.width / 2 - 64 / 2, 22) },
     { 15, function (self) self.show_delta = flr(100 * (game.last_overall_score - self.score)) end },
-    { 30, function (self, progress) self.score = self.score + progress * (game.last_overall_score - self.score) end },
+    { 30, function (self, progress)
+        if progress == 0 then
+            if self.show_delta > 0 then
+                sfx(sounds.add)
+            elseif self.show_delta < 0 then
+                sfx(sounds.subtract)
+            end
+        end
+        self.score = self.score + progress * (game.last_overall_score - self.score)
+    end },
     { -1, nop },
     { 1, function(self) self.show_delta = nil end },
     { default_storyboard_period, create_positional_update(system.width - 64, 0, function (self) self.last_score = game.last_overall_score end) },
@@ -1043,6 +1067,12 @@ function game:update()
         self.last_z = z
     else
         self.last_z = false
+    end
+
+    if last_state == game_states.title and self.state ~= game_states.title then
+        sfx(sounds.snow)
+    elseif last_state ~= game_states.title and self.state == game_states.title then
+        sfx(sounds.snow, -2)
     end
 
     marquee:update()
@@ -1419,3 +1449,11 @@ __label__
 __gff__
 0000000001020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+__sfx__
+010f00000c63300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+010500001f33021330233300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+010500001733015330133300030000300003000030000300003000030000300003000030000300003000030000300003000030000300003000030000300003000000000000000000000000000000000000000000
+010200002463000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+010300000c7410c7410c7410c7410e7410e7410e7410e741107411074111741137411574117741187410070100701007010070100701007010070100701007010070100700007000070000700007000070000700
+010300001874118741187411874117741177411774117741157411374111741107410e7410c7410c7410070100701007010070100701007010070100701007010070100700007000070000700007000070000700
+011300200e61010610176101161011610156100e6100c61015610106101161017610156100e6100c61010610116100e61017610176101061011610176100e6101561010610116101761010610156100e61011610
